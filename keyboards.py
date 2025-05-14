@@ -1,6 +1,8 @@
 from telegram import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-from config import saved_sites, selected_sites, selected_days, DAYS_OF_WEEK
+from config import selected_sites, selected_days, DAYS_OF_WEEK
+from data_manager import load_sites
+
 
 def main_menu():
     return ReplyKeyboardMarkup(
@@ -53,10 +55,11 @@ def repeat_type_keyboard():
     ]])
 
 def site_selection_keyboard():
+    sites = load_sites()
     buttons = []
-    for site in saved_sites:
+    for site in sites:
         checked = "✅" if site in selected_sites else "⬜"
         buttons.append([InlineKeyboardButton(f"{checked} {site}", callback_data=f"toggle:{site}")])
-    if saved_sites:
+    if sites:
         buttons.append([InlineKeyboardButton("🔍 Parse Selected", callback_data="parse_selected")])
     return InlineKeyboardMarkup(buttons)

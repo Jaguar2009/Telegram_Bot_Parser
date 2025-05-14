@@ -8,15 +8,15 @@ from datetime import datetime
 import asyncio
 
 import config
-from config import autoparse_points, DAYS_OF_WEEK, selected_sites, API_TOKEN
-from data_manager import save_parsed_result, load_data
+from config import DAYS_OF_WEEK, selected_sites, API_TOKEN
+from data_manager import save_parsed_result, save_points, load_points
 from keyboards import main_menu
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     config.user_chat_id = update.effective_chat.id
     config.bot_context = context
-    await update.message.reply_text("Вітаю! Оберіть дію:", reply_markup=main_menu())
+    await update.message.reply_text("Welcome! Please choose an action:", reply_markup=main_menu())
 
 
 async def parse_site(url: str) -> str:
@@ -25,9 +25,9 @@ async def parse_site(url: str) -> str:
             response = await client.get(url)
             tree = HTMLParser(response.text)
             title = tree.css_first("title")
-            return title.text(strip=True) if title else "[немає заголовка]"
+            return title.text(strip=True) if title else "[no title]"
     except Exception as e:
-        return f"Помилка при парсингу {url}: {e}"
+        return f"Error while parsing {url}: {e}"
 
 
 async def run_autoparsing():
@@ -37,30 +37,34 @@ async def run_autoparsing():
     now = datetime.now()
     weekday = DAYS_OF_WEEK[now.weekday()]
     current_time = now.strftime("%H:%M")
+    points = load_points()
 
-    for point in autoparse_points[:]:
+    for point in points[:]:  # create a copy of the list
         if current_time == point['time'] and weekday in point['days']:
             if not selected_sites:
                 await config.bot_context.bot.send_message(
                     chat_id=config.user_chat_id,
-                    text="[Автопарсинг] Немає вибраних сайтів."
+                    text="[Auto-parsing] No sites selected."
                 )
                 continue
 
-            results = []
-            parsed_results = []
+            parsed_results = []  # list of (url, title) tuples
+            output_lines = []    # for user output
 
             for url in selected_sites:
                 title = await parse_site(url)
-                results.append(f"{url} → {title}")
                 parsed_results.append((url, title))
+                output_lines.append(f"{url} → {title}")  # avoid mixing with saving
 
-            message = "[Автопарсинг]\n" + "\n".join(results)
+            message = "[Auto-parsing]\n" + "\n".join(output_lines)
             await config.bot_context.bot.send_message(chat_id=config.user_chat_id, text=message)
-            save_parsed_result(parsed_results)
+
+            save_parsed_result(parsed_results)  # pass only clean tuples
 
             if not point['repeat']:
-                autoparse_points.remove(point)
+                points.remove(point)
+
+    save_points(points)
 
 
 def start_schedule_thread():
@@ -83,14 +87,14 @@ def start_schedule_thread():
 
 if __name__ == '__main__':
     from handlers import handle_callback, handle_message
-    load_data()
 
-    app = ApplicationBuilder().token(API_TOKEN).build()
+    app = ApplicationBuilder().token(API_TOKEN).read_timeout(30).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    # Запуск автопарсингу
+    # Start auto-parsing
     try:
         main_loop = asyncio.get_running_loop()
     except RuntimeError:
